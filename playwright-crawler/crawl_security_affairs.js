@@ -19,7 +19,7 @@ const downloadImage = (url, filepath) => {
   return new Promise((resolve, reject) => {
     if (url.endsWith('.svg')) return resolve();
     https.get(url, (res) => {
-      if (res.statusCode !== 200) return reject(new Error(`이미지 다운로드 실패 (${res.statusCode})`));
+      if (res.statusCode !== 200) return reject(new Error(`Image download failed (${res.statusCode})`));
       const fileStream = fs.createWriteStream(filepath);
       res.pipe(fileStream);
       fileStream.on('finish', () => fileStream.close(resolve));
@@ -36,7 +36,7 @@ const getTodayString = () => {
 (async () => {
   const browser = await chromium.launch({ headless: true });
   const todayStr = getTodayString();
-  console.log(`📅 오늘 날짜: ${todayStr}`);
+  console.log(`Today: ${todayStr}`);
 
   for (const baseUrl of baseUrls) {
     let pageNum = 1;
@@ -46,19 +46,17 @@ const getTodayString = () => {
     while (!foundTodayArticle) {
       let url = baseUrl;
       if (pageNum > 1) {
-        if (baseUrl === 'https://securityaffairs.com/') {
-          url = `https://securityaffairs.com/?page=${pageNum}#latest_news_section`;
-        } else {
-          url = `${baseUrl}/page/${pageNum}`;
-        }
+        url = baseUrl === 'https://securityaffairs.com/'
+          ? `https://securityaffairs.com/?page=${pageNum}#latest_news_section`
+          : `${baseUrl}/page/${pageNum}`;
       }
 
       const page = await browser.newPage();
-      console.log(`\n🌐 카테고리: ${url}`);
+      console.log(`\nCategory URL: ${url}`);
       try {
         await page.goto(url, { waitUntil: 'load', timeout: 60000 });
       } catch (err) {
-        console.log(`❌ 페이지 로드 실패: ${err.message}`);
+        console.log(`Page load failed: ${err.message}`);
         await page.close();
         break;
       }
@@ -95,15 +93,15 @@ const getTodayString = () => {
       }, todayStr);
 
       if (todaysArticles.length === 0) {
-        console.log(`⚠️ [${categoryName}] ${pageNum} 페이지에서 오늘 날짜 기사 없음`);
+        console.log(`[${categoryName}] No articles dated today on page ${pageNum}`);
         await page.close();
         pageNum++;
-        if (pageNum > 3) break; // 최대 페이지 순회 제한
+        if (pageNum > 3) break; // limit pagination
         continue;
       }
 
       foundTodayArticle = true;
-      console.log(`📰 [${categoryName}] 오늘 날짜 기사 ${todaysArticles.length}건 수집`);
+      console.log(`[${categoryName}] Found ${todaysArticles.length} articles dated today`);
 
       for (const [i, article] of todaysArticles.entries()) {
         const safeTitle = article.title.replace(/[^a-z0-9]/gi, '_').toLowerCase();
@@ -116,13 +114,14 @@ const getTodayString = () => {
         );
         fs.mkdirSync(articleDir, { recursive: true });
 
-        console.log(`📄 [${i + 1}] ${article.title}`);
-        console.log(`🔗 URL: ${article.url}`);
+        console.log(`[${i + 1}] ${article.title}`);
+        console.log(`URL: ${article.url}`);
 
         const articlePage = await browser.newPage();
         await articlePage.goto(article.url, { waitUntil: 'domcontentloaded', timeout: 60000 });
 
-        let content = '', images = [];
+        let content = '';
+        let images = [];
 
         try {
           content = await articlePage.$eval('div.article-details-block', el => el.innerText.trim());
@@ -130,28 +129,28 @@ const getTodayString = () => {
             imgs.map(img => img.src).filter(src => src && src.startsWith('http') && !src.endsWith('.svg'))
           );
 
-          const fullText = `\n제목: ${article.title}\nURL: ${article.url}\n\n${content}`.trim();
+          const fullText = `Title: ${article.title}\nURL: ${article.url}\n\n${content}`.trim();
           fs.writeFileSync(path.join(articleDir, 'article.txt'), fullText, 'utf-8');
-          console.log(`📝 기사 본문 저장 완료`);
+          console.log(`Saved article body`);
         } catch (e) {
-          console.log(`⚠️ 본문 수집 실패: ${e.message}`);
-          fs.writeFileSync(path.join(articleDir, 'article.txt'), '(본문 없음)', 'utf-8');
+          console.log(`Failed to collect article body: ${e.message}`);
+          fs.writeFileSync(path.join(articleDir, 'article.txt'), '(No content)', 'utf-8');
         }
 
         if (images.length > 0) {
-          console.log(`🖼️ 이미지 ${images.length}개 다운로드 중...`);
+          console.log(`Downloading ${images.length} image(s)...`);
           for (const [idx, imgUrl] of images.entries()) {
             const ext = path.extname(new URL(imgUrl).pathname).split('?')[0] || '.jpg';
             const filename = path.join(articleDir, `image_${idx + 1}${ext}`);
             try {
               await downloadImage(imgUrl, filename);
-              console.log(`   ✅ 저장 완료: ${filename}`);
+              console.log(`Saved: ${filename}`);
             } catch (err) {
-              console.log(`   ❌ 실패: ${imgUrl}`);
+              console.log(`Failed: ${imgUrl}`);
             }
           }
         } else {
-          console.log(`🖼️ 저장할 이미지 없음`);
+          console.log(`No images to save`);
         }
 
         await articlePage.close();

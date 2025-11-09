@@ -1,6 +1,6 @@
 import streamlit as st
 
-# 다크웹 분석 분위기에 어울리는 폰트 적용
+# Apply a monospaced, dark-themed font suitable for a threat-intel dashboard
 font_css = """
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&display=swap');
@@ -18,6 +18,7 @@ h1, h2, h3, h4, h5, h6 {
 </style>
 """
 st.markdown(font_css, unsafe_allow_html=True)
+
 import ast
 import json
 import os
@@ -35,24 +36,20 @@ from google import genai
 from sklearn.cluster import KMeans
 from sklearn.metrics import silhouette_score
 from sklearn.preprocessing import StandardScaler
+from settings import settings
 
-# ----------------- 경로 설정 ------------------------
+# ----------------- Paths ------------------------
 project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 shodan_data_path = os.path.join(project_root, "data", "shodan", "shodan_data.csv")
 cve_db_path = os.path.join(project_root, "data", "shodan", "cvedb_shodan.csv")
 attack_matrix_path = os.path.join(project_root, "data", "enterprise-attack-v17.1.xlsx")
 news_data_path = os.path.join(project_root, "data", "news_data.json")
 
-load_dotenv()
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+GEMINI_API_KEY = settings.GEMINI_API_KEY
 
 def summarize_with_gemini(prompt):
     client = genai.Client(api_key=GEMINI_API_KEY)
-
-    response = client.models.generate_content(
-        model="gemini-2.5-flash", contents=prompt
-    )
-    
+    response = client.models.generate_content(model="gemini-2.5-flash", contents=prompt)
     return response.text
 
 @st.cache_data
@@ -65,7 +62,7 @@ def load_news_data():
     return df_news
 
 
-# ----------------- 데이터 로드 및 전처리 -----------------
+# ----------------- Data load & preprocessing -----------------
 @st.cache_data
 def load_data():
     df_shodan = pd.read_csv(shodan_data_path)
@@ -93,14 +90,13 @@ def load_data():
 
     return df_shodan, df_cvedb, mitre_df
 
-# ----------------- Streamlit 사이드바 -----------------
-st.sidebar.title("대시보드 메뉴")
+# ----------------- Sidebar -----------------
+st.sidebar.title("Dashboard Menu")
 
-# 세션 상태 초기화
+# Session state
 if "menu_option" not in st.session_state:
-    st.session_state.menu_option = "그룹 기반 분석"
+    st.session_state.menu_option = "Group Analysis"
 
-# 버튼 스타일 공통 적용 (가로 폭 100%, 높이 40px 등)
 button_style = """
 <style>
 .sidebar-button {
@@ -120,23 +116,19 @@ button_style = """
 }
 </style>
 """
-
-# 삽입
 st.markdown(button_style, unsafe_allow_html=True)
 
-# 버튼 UI 구현
-if st.sidebar.button("그룹 기반 분석", key="btn_group"):
-    st.session_state.menu_option = "그룹 기반 분석"
-if st.sidebar.button("TTP 기반 분석", key="btn_cluster"):
-    st.session_state.menu_option = "TTP 기반 분석"
-if st.sidebar.button("뉴스 요약 슬라이드", key="btn_news"):
-    st.session_state.menu_option = "뉴스 요약 슬라이드"
+# Menu buttons
+if st.sidebar.button("Group Analysis", key="btn_group"):
+    st.session_state.menu_option = "Group Analysis"
+if st.sidebar.button("TTP Analysis", key="btn_cluster"):
+    st.session_state.menu_option = "TTP Analysis"
+if st.sidebar.button("News Summary Slides", key="btn_news"):
+    st.session_state.menu_option = "News Summary Slides"
 
-# 현재 선택된 메뉴
 menu_option = st.session_state.menu_option
 
-
-# ----------------- 데이터 로딩 -----------------
+# ----------------- Load data -----------------
 df_shodan, df_cvedb, mitre_df = load_data()
 
 cve_to_ttp = df_cvedb.set_index('cve_id')['technique_name'].to_dict()
@@ -148,24 +140,23 @@ df_shodan['tooltip_info'] = df_shodan.apply(
     lambda row: f"Group: {row['group']}\nDomain: {row['domain']}\nCVE: {row['cve_summary']}\nTTP: {row['ttp_summary']}", axis=1
 )
 
-# ----------------- 그룹 기반 분석 -----------------
-if menu_option == "그룹 기반 분석":
-    st.title("Shodan 기반 위협 분석 - 그룹별 시각화")
+# ----------------- Group Analysis -----------------
+if menu_option == "Group Analysis":
+    st.title("Shodan-based Threat Analysis — by Group")
 
     group_list = sorted(df_shodan['group'].dropna().unique())
-    selected_group = st.selectbox("분석할 그룹 선택", group_list)
+    selected_group = st.selectbox("Select group to analyze", group_list)
     group_df = df_shodan[df_shodan['group'] == selected_group]
     group_cves = sum(group_df['cve_list'], [])
     group_cvedb = df_cvedb[df_cvedb['cve_id'].isin(group_cves)].copy()
 
-    st.subheader("선택된 그룹의 서버 위치 및 위협 정보")
+    st.subheader("Server Locations and Threat Info")
 
-    # 지도에 표시할 layer - 색상 고정
     layer = pdk.Layer(
         "ScatterplotLayer",
         data=group_df,
         get_position='[longitude, latitude]',
-        get_fill_color='[200, 30, 0, 160]',  # 고정 색상
+        get_fill_color='[200, 30, 0, 160]',
         get_radius=50000,
         pickable=True
     )
@@ -182,26 +173,32 @@ if menu_option == "그룹 기반 분석":
         initial_view_state=view_state,
         tooltip={"text": "{tooltip_info}"}
     )
-
     st.pydeck_chart(r)
 
-    st.subheader("지역별 서버 수")
+    st.subheader("Server Count by Region")
     region_count = group_df['region_full'].value_counts().reset_index()
     region_count.columns = ['region_full', 'server_count']
     st.plotly_chart(px.bar(region_count, x='region_full', y='server_count'), use_container_width=True)
 
-    st.subheader("🛡️ ATT&CK Technique 분포 (TTP ID 기준)")
+    st.subheader("ATT&CK Technique Distribution (by TTP ID)")
     tech_count = group_cvedb.groupby(['technique_id', 'technique_name', 'description']).size().reset_index(name='count')
-    fig = px.bar(tech_count, x='technique_id', y='count', hover_data=['technique_name'],
-                 title=f"{selected_group}의 ATT&CK Technique 매칭 분포 (TTP ID 기준)",
-                 labels={'technique_id': 'TTP ID', 'count': 'Matching Count'})
-    fig.update_traces(marker_color='indianred',
-                      hovertemplate='<b>TTP ID:</b> %{x}<br><b>Count:</b> %{y}<br><b>Name:</b> %{customdata[0]}')
+    fig = px.bar(
+        tech_count,
+        x='technique_id',
+        y='count',
+        hover_data=['technique_name'],
+        title=f"ATT&CK Technique Matches for {selected_group} (by TTP ID)",
+        labels={'technique_id': 'TTP ID', 'count': 'Matching Count'}
+    )
+    fig.update_traces(
+        marker_color='indianred',
+        hovertemplate='<b>TTP ID:</b> %{x}<br><b>Count:</b> %{y}<br><b>Name:</b> %{customdata[0]}'
+    )
     st.plotly_chart(fig, use_container_width=True)
 
-# ----------------- 클러스터 기반 분석 -----------------
-elif menu_option == "TTP 기반 분석":
-    st.title("Shodan 기반 위협 분석 - 클러스터 기반")
+# ----------------- TTP Analysis (clustering) -----------------
+elif menu_option == "TTP Analysis":
+    st.title("Shodan-based Threat Analysis — TTP Clustering")
 
     tech_pivot = (
         df_shodan.explode('cve_list')
@@ -223,11 +220,11 @@ elif menu_option == "TTP 기반 분석":
         if score > best_score:
             best_score, best_k = score, k
 
-    if st.sidebar.checkbox("Elbow 차트 보기"):
+    if st.sidebar.checkbox("Show Elbow Curve"):
         st.plotly_chart(px.line(x=list(K), y=distortions, markers=True, title="Elbow Curve"))
         st.plotly_chart(px.line(x=list(K), y=silhouette_scores, markers=True, title="Silhouette Score"))
 
-    st.sidebar.markdown(f"**자동 선택된 클러스터 수: {best_k}**")
+    st.sidebar.markdown(f"**Auto-selected number of clusters: {best_k}**")
     kmeans = KMeans(n_clusters=best_k, random_state=42)
     cluster_labels = kmeans.fit_predict(tech_scaled)
     tech_pivot['cluster'] = cluster_labels
@@ -237,31 +234,26 @@ elif menu_option == "TTP 기반 분석":
     tech_pivot['umap_x'] = embedding[:, 0]
     tech_pivot['umap_y'] = embedding[:, 1]
 
-    # Index를 컬럼으로 복원
     tech_pivot_reset = tech_pivot.reset_index()
 
-    st.subheader("클러스터별 그룹 위치 (UMAP 시각화)")
+    st.subheader("Group Positions by Cluster (UMAP)")
     fig_umap = px.scatter(
         tech_pivot_reset,
         x='umap_x',
         y='umap_y',
         color='cluster',
         hover_data=['group'],
-
     )
     st.plotly_chart(fig_umap)
 
-
     df_shodan_clustered = df_shodan.merge(tech_pivot[['cluster']].reset_index(), on='group', how='left')
-    selected_clusters = st.multiselect("분석할 클러스터 선택",
-                                        sorted(df_shodan_clustered['cluster'].dropna().unique()),
-                                        default=sorted(df_shodan_clustered['cluster'].dropna().unique()))
+    selected_clusters = st.multiselect(
+        "Select clusters to analyze",
+        sorted(df_shodan_clustered['cluster'].dropna().unique()),
+        default=sorted(df_shodan_clustered['cluster'].dropna().unique())
+    )
 
-    # st.subheader("클러스터별 그룹 목록")
-    # all_group_counts = df_shodan_clustered[df_shodan_clustered['cluster'].isin(selected_clusters)]
-    # st.dataframe(all_group_counts.groupby(['group', 'cluster']).size().reset_index(name='server_count'))
-
-    st.subheader("클러스터별 Technique 분포")
+    st.subheader("Technique Distribution by Cluster")
     df_exploded = df_shodan_clustered[df_shodan_clustered['cluster'].isin(selected_clusters)].explode('cve_list')
     merged = df_exploded.merge(df_cvedb[['cve_id', 'technique_id']], left_on='cve_list', right_on='cve_id')
     merged = merged.merge(mitre_df[['technique_id', 'technique_name', 'description']], on='technique_id', how='left')
@@ -269,47 +261,44 @@ elif menu_option == "TTP 기반 분석":
     fig_tech = px.bar(tech_count, x='technique_id', y='count', color='cluster', facet_col='cluster', hover_data=['technique_name'])
     st.plotly_chart(fig_tech, use_container_width=True)
 
-    st.subheader("클러스터별 TTP 설명 요약 (Gemini AI)")
+    st.subheader("Cluster-wise TTP Summary (Gemini)")
 
     top_ttps = tech_count.groupby('cluster').apply(lambda d: d.sort_values('count', ascending=False).head(5)).reset_index(drop=True)
 
     for clus in sorted(top_ttps['cluster'].unique()):
-        st.markdown(f"### 🔹 클러스터 {clus}")
+        st.markdown(f"### Cluster {clus}")
         top_df = top_ttps[top_ttps['cluster'] == clus]
 
-        # TTP 설명 하나로 합치기
         description_text = ". ".join(
             f"{row['technique_name']} ({row['technique_id']}): {row['description']}" for _, row in top_df.iterrows()
         )
 
-        # 프롬프트 구성
         prompt = f"""
-    아래는 사이버 공격 클러스터 {clus}에서 자주 나타나는 MITRE ATT&CK TTP 설명입니다:
+Below are descriptions of MITRE ATT&CK TTPs that frequently appear in cluster {clus}:
 
-    {description_text}
+{description_text}
 
-    이 클러스터의 위협 행위 특성과 관련 랜섬웨어 그룹의 공격 전략을 기반으로 다음을 요약해 주세요:
-    - 어떤 공격 유형이 포함되는가 (초기 침입, lateral movement 등)
-    - 특징적인 TTP 조합이 의미하는 위협 유형
-    - 관련 랜섬웨어 그룹 사례 예시가 있다면
+Summarize the cluster's likely threat behavior:
+- Which attack phases are represented (e.g., initial access, lateral movement)
+- What the characteristic TTP combination implies
+- Example ransomware groups if relevant
 
-    요약으로 제시해 주세요.
+Return a concise analytical summary.
         """
 
-        if st.button(f"Gemini로 요약 생성하기 - 클러스터 {clus}", key=f"gemini_btn_{clus}"):
-            with st.spinner("Gemini 모델로 요약 생성 중..."):
+        if st.button(f"Generate summary with Gemini — Cluster {clus}", key=f"gemini_btn_{clus}"):
+            with st.spinner("Generating summary with Gemini..."):
                 try:
                     summary = summarize_with_gemini(prompt)
-                    st.success("요약 완료")
-                    st.markdown(f"**LLM 분석 결과:**\n\n{summary}")
+                    st.success("Summary generated")
+                    st.markdown(f"**LLM Analysis:**\n\n{summary}")
                 except Exception as e:
-                    st.error(f"Gemini API 호출 실패: {e}")
-                    st.markdown("### Fallback: TTP 설명 요약 (수동 출력)")
+                    st.error(f"Gemini API call failed: {e}")
+                    st.markdown("### Fallback: TTP Descriptions")
                     for _, row in top_df.iterrows():
                         st.markdown(f"- **{row['technique_name']} ({row['technique_id']})**: {row['description']}")
 
-    
-    st.subheader("클러스터별 Top TTP 레이다 차트")
+    st.subheader("Top TTP Radar by Cluster")
     top_ttp_ids = tech_count.groupby('technique_id')['count'].sum().nlargest(8).index.tolist()
     pivot_radar = tech_count[tech_count['technique_id'].isin(top_ttp_ids)].pivot(index='cluster', columns='technique_id', values='count').fillna(0)
     fig_radar = go.Figure()
@@ -323,14 +312,12 @@ elif menu_option == "TTP 기반 분석":
     fig_radar.update_layout(polar=dict(radialaxis=dict(visible=True)), title="Radar Chart of TTPs")
     st.plotly_chart(fig_radar)
 
-    with st.expander("전체 TTP 설명 테이블"):
+    with st.expander("Full TTP Description Table"):
         st.dataframe(mitre_df[['technique_id', 'technique_name', 'description']].drop_duplicates().sort_values('technique_id'))
 
-
-# ----------------- 뉴스 데이터 시각화 -----------------
-
-elif menu_option == "뉴스 요약 슬라이드":
-    st.title("📚 뉴스 요약 슬라이드")
+# ----------------- News slides -----------------
+elif menu_option == "News Summary Slides":
+    st.title("News Summary Slides")
 
     news_data_path = os.path.join(project_root, "data", "news_data.json")
 
@@ -347,8 +334,10 @@ elif menu_option == "뉴스 요약 슬라이드":
 
     df_news = load_news_data()
 
-    if "d_idx" not in st.session_state: st.session_state.d_idx = 0
-    if "n_idx" not in st.session_state: st.session_state.n_idx = 0
+    if "d_idx" not in st.session_state:
+        st.session_state.d_idx = 0
+    if "n_idx" not in st.session_state:
+        st.session_state.n_idx = 0
 
     dates = sorted(df_news["date_str"].unique())
     sel_date = st.sidebar.selectbox("Date", dates, index=st.session_state.d_idx)
@@ -358,27 +347,27 @@ elif menu_option == "뉴스 요약 슬라이드":
 
     c1, _, c2 = st.columns([1, 6, 1])
     with c1:
-        if st.button("⬅ 이전 날짜"):
+        if st.button("Previous date"):
             st.session_state.d_idx = max(0, st.session_state.d_idx - 1)
             st.session_state.n_idx = 0
     with c2:
-        if st.button("다음 날짜 ➡"):
+        if st.button("Next date"):
             st.session_state.d_idx = min(len(dates) - 1, st.session_state.d_idx + 1)
             st.session_state.n_idx = 0
 
     today = dates[st.session_state.d_idx]
-    st.header(f"📅 {today}")
+    st.header(today)
 
     daily = df_news[df_news["date_str"] == today].reset_index(drop=True)
     if daily.empty:
-        st.info("해당 일자 뉴스가 없습니다.")
+        st.info("No news for this date.")
     else:
         p1, _, p2 = st.columns([1, 6, 1])
         with p1:
-            if st.button("◀ 이전 기사"):
+            if st.button("Previous article"):
                 st.session_state.n_idx = (st.session_state.n_idx - 1) % len(daily)
         with p2:
-            if st.button("다음 기사 ▶"):
+            if st.button("Next article"):
                 st.session_state.n_idx = (st.session_state.n_idx + 1) % len(daily)
 
         rec = daily.iloc[st.session_state.n_idx]
@@ -402,13 +391,13 @@ elif menu_option == "뉴스 요약 슬라이드":
         </style>
         <div class="flip-card"><div class="flip-card-inner">
           <div class="flip-card-front">
-            <h3>📰 {title}</h3>
+            <h3>{title}</h3>
             <p style="font-size:14px; line-height:1.4;">{summary}</p>
           </div>
           <div class="flip-card-back">
-            <h4>🛡️ 관련 TTP</h4>
+            <h4>Related TTP</h4>
             <p><strong>{mitre_id}</strong><br>{mitre_name}</p>
-            <p>유사도 점수: {mitre_score:.2f}</p>
+            <p>Similarity score: {mitre_score:.2f}</p>
           </div>
         </div></div>
         """

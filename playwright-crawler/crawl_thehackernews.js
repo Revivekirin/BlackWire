@@ -14,7 +14,7 @@ const todayStr = new Date().toISOString().split('T')[0];
 const downloadImage = (url, filepath) => {
   return new Promise((resolve, reject) => {
     https.get(url, res => {
-      if (res.statusCode !== 200) return reject(new Error(`이미지 다운로드 실패: ${res.statusCode}`));
+      if (res.statusCode !== 200) return reject(new Error(`Image download failed: ${res.statusCode}`));
       const fileStream = fs.createWriteStream(filepath);
       res.pipe(fileStream);
       fileStream.on('finish', () => fileStream.close(resolve));
@@ -38,7 +38,7 @@ const downloadImage = (url, filepath) => {
   for (const { url: baseUrl, category } of BASE_URLS) {
     const page = await context.newPage();
     try {
-      console.log(`🌐 [${category}] 방문 중: ${baseUrl}`);
+      console.log(`[${category}] Visiting: ${baseUrl}`);
       await page.goto(baseUrl, { waitUntil: 'domcontentloaded', timeout: 60000 });
 
       const articles = await page.$$eval('div.body-post.clear', nodes =>
@@ -56,7 +56,7 @@ const downloadImage = (url, filepath) => {
         }).filter(Boolean)
       );
 
-      console.log(`📰 [${category}] 기사 ${articles.length}건 확인`);
+      console.log(`[${category}] Articles found: ${articles.length}`);
 
       for (const [i, article] of articles.entries()) {
         const safeTitle = article.title.replace(/[^a-z0-9]/gi, '_').toLowerCase();
@@ -75,19 +75,19 @@ const downloadImage = (url, filepath) => {
         try {
           actualDateText = await articlePage.$eval('div.postmeta span.author', el => el.textContent.trim());
         } catch {
-          console.warn(`⚠️ 날짜 추출 실패 - ${article.url}`);
+          console.warn(`Failed to extract date: ${article.url}`);
           await articlePage.close();
           continue;
         }
 
         const parsedDate = new Date(actualDateText + ' 00:00:00').toISOString().split('T')[0];
         if (parsedDate !== todayStr) {
-          console.log(`⏭️ [${category}] ${article.title} (본문 날짜: ${actualDateText})`);
+          console.log(`[${category}] Skipping (article date: ${actualDateText}): ${article.title}`);
           await articlePage.close();
           continue;
         }
 
-        console.log(`✅ [${category}] 수집 중: ${article.title}`);
+        console.log(`[${category}] Collecting: ${article.title}`);
 
         let paragraphs = [];
         try {
@@ -95,18 +95,18 @@ const downloadImage = (url, filepath) => {
             nodes.map(p => p.textContent.trim()).filter(p => p.length > 0)
           );
         } catch {
-          console.warn('⚠️ 본문 <p> 수집 실패');
+          console.warn('Failed to collect <p> elements from body.');
         }
 
         if (paragraphs.length === 0) {
-          console.log(`⚠️ 본문 없음 → 기사 저장 생략: ${article.title}`);
+          console.log(`No body content — skipping: ${article.title}`);
           await articlePage.close();
           continue;
         }
 
         fs.mkdirSync(articleDir, { recursive: true });
 
-        const fullText = `제목: ${article.title}\nURL: ${article.url}\n날짜: ${actualDateText}\n\n본문:\n${paragraphs.join('\n\n')}`;
+        const fullText = `Title: ${article.title}\nURL: ${article.url}\nDate: ${actualDateText}\n\nContent:\n${paragraphs.join('\n\n')}`;
         fs.writeFileSync(path.join(articleDir, 'article.txt'), fullText, 'utf-8');
 
         if (article.thumbImg?.startsWith('http')) {
@@ -114,19 +114,19 @@ const downloadImage = (url, filepath) => {
           const imgPath = path.join(articleDir, `thumb${ext}`);
           try {
             await downloadImage(article.thumbImg, imgPath);
-            console.log(`🖼️  썸네일 저장 완료: ${imgPath}`);
+            console.log(`Thumbnail saved: ${imgPath}`);
           } catch {
-            console.warn(`❌ 썸네일 다운로드 실패: ${article.thumbImg}`);
+            console.warn(`Thumbnail download failed: ${article.thumbImg}`);
           }
         }
 
         await articlePage.close();
-        console.log('✅ 저장 완료\n' + '-'.repeat(80));
+        console.log('Saved\n' + '-'.repeat(80));
       }
 
       await page.close();
     } catch (err) {
-      console.error(`❌ 오류 [${category}]:`, err.message);
+      console.error(`Error [${category}]:`, err.message);
       await page.close();
     }
   }

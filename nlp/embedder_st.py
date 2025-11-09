@@ -1,4 +1,3 @@
-# nlp/embedder_st.py
 from sentence_transformers import SentenceTransformer
 import torch
 

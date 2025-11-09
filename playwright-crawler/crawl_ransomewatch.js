@@ -2,25 +2,25 @@ const { chromium } = require('playwright');
 const axios = require('axios');
 const fs = require('fs');
 
-// page.goto() (retry 추가)
+// page.goto() with retry
 async function safeGoto(page, url, options = {}, retries = 3, delayMs = 5000) {
   for (let attempt = 1; attempt <= retries; attempt++) {
     try {
-      console.log(`[GOTO] ${url} (시도 ${attempt}/${retries})`);
+      console.log(`[GOTO] ${url} (attempt ${attempt}/${retries})`);
       await page.goto(url, options);
-      console.log(`[GOTO] 성공`);
+      console.log(`[GOTO] success`);
       return;
     } catch (err) {
-      console.error(`[GOTO 실패] ${err.message}`);
+      console.error(`[GOTO error] ${err.message}`);
       if (attempt === retries) throw err;
-      console.log(`[대기 후 재시도] ${delayMs / 1000}초`);
+      console.log(`[Retry after] ${delayMs / 1000}s`);
       await new Promise(resolve => setTimeout(resolve, delayMs));
     }
   }
 }
 
 async function runCrawler() {
-  console.log(`[▶] Playwright 시작`);
+  console.log(`[Start] Playwright`);
 
   const browser = await chromium.launch({ headless: true, args: ['--no-sandbox'] });
   const page = await browser.newPage();
@@ -31,9 +31,7 @@ async function runCrawler() {
   });
 
   await page.waitForTimeout(5000);
-  //const today = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
   const today = new Date().toISOString().slice(0, 10);
-  //const today = "2025-05-08"; 
 
   const groups = await page.evaluate((today) => {
     const rows = Array.from(document.querySelectorAll('tbody tr'));
@@ -54,7 +52,7 @@ async function runCrawler() {
   await browser.close();
 
   if (groups.length === 0) {
-    console.log(`[${today}] 기준 그룹이 없습니다.`);
+    console.log(`[${today}] No groups found.`);
     return;
   }
 
@@ -67,50 +65,48 @@ async function runCrawler() {
     try {
       existingData = JSON.parse(fs.readFileSync(outputPath, 'utf-8'));
     } catch (err) {
-      console.error("[ERROR] 기존 JSON 파일 읽기 실패:", err.message);
+      console.error('[ERROR] Failed to read existing JSON:', err.message);
     }
   }
 
-  // 기존 데이터: group → fqdn
+  // Build current map: group -> fqdn
   const existingMap = {};
   for (const item of existingData) {
     existingMap[item.group] = item.fqdn;
   }
 
-  // 업데이트 처리
+  // Update entries
   for (const group of groups) {
     console.log(`\n--- ${group} ---`);
     const fqdn = await getLatestOnionFQDN(group);
 
     if (!fqdn) {
-      console.log(`❌ ${group}: 사용할 수 있는 .onion 주소가 없습니다.`);
+      console.log(`${group}: no usable .onion address.`);
       continue;
     }
 
     const previousFqdn = existingMap[group];
     if (previousFqdn && previousFqdn !== fqdn) {
-      console.log(`🔄 ${group}의 FQDN이 변경됨: ${previousFqdn} → ${fqdn}`);
-      // 업데이트
+      console.log(`${group} FQDN changed: ${previousFqdn} -> ${fqdn}`);
       const index = existingData.findIndex(item => item.group === group);
       if (index !== -1) {
         existingData[index].fqdn = fqdn;
       }
     } else if (!previousFqdn) {
-      console.log(`➕ ${group} 신규 등록`);
+      console.log(`${group} added`);
       existingData.push({ group, fqdn });
     } else {
-      console.log(`✅ ${group} 기존 FQDN 유지`);
+      console.log(`${group} FQDN unchanged`);
     }
   }
 
   fs.writeFileSync(outputPath, JSON.stringify(existingData, null, 2));
-  console.log(`📦 저장 완료: ${outputPath}`);
+  console.log(`Saved: ${outputPath}`);
 }
-
 
 async function getLatestOnionFQDN(groupName) {
   try {
-    const res = await axios.get('https://ransomwhat.telemetry.ltd/groups');  
+    const res = await axios.get('https://ransomwhat.telemetry.ltd/groups');
     const parsed = res.data;
     const target = parsed.find(g => g.name === groupName);
     if (!target || !target.locations) return null;
@@ -121,14 +117,13 @@ async function getLatestOnionFQDN(groupName) {
 
     return sorted[0]?.fqdn || null;
   } catch (err) {
-    console.error(`[ERROR] ${groupName} FQDN 요청 실패:`, err.message);
+    console.error(`[ERROR] Failed FQDN request for ${groupName}:`, err.message);
     return null;
   }
 }
 
-// 🌀 최종 실행 부분
 async function main() {
-  console.log(`[▶] Playwright 크롤러 시작`);
+  console.log(`[Start] Playwright crawler`);
   await runCrawler();
 }
 

@@ -9,12 +9,6 @@ echo "Current working directory: $(pwd)"
 echo "Starting Python pipeline script..."
 
 python3 mitre_match.py \
-    # --input_dir ../data/mitre_attack/enterprise-attack/enterprise-attack.json \
-    # --output_dir ../data/mitre_attack/enterprise-attack/ \
-    # --output_file enterprise-attack-matched.json \
-    # --output_format json \
-    # --verbose
-
 
 EXIT_CODE=$? 
 if [ $EXIT_CODE -eq 0 ]; then

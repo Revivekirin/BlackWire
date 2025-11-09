@@ -3,7 +3,6 @@ echo "[$(date)] playwright-crawler 실행 시작"
 
 cd /Users/kimjihe/Desktop/git/2025capstone || exit 1
 
-# === 날짜 기준 정리 ===
 TODAY=$(date +%Y-%m-%d)
 BASE_DIR="./downloads"
 SITES=("gbhackers" "securityaffairs" "thehackernews" "securityweek" "boannews")
@@ -29,7 +28,6 @@ for SITE in "${SITES[@]}"; do
 done
 
 
-# === Docker 크롤러 실행 ===
 docker-compose up -d playwright-crawler
 
 docker run --rm -v "$PWD/downloads:/app/downloads" 2025capstone-playwright-crawler node crawl_gbhackers.js

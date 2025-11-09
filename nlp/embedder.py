@@ -1,11 +1,9 @@
-# nlp/embedder.py
 from transformers import AutoTokenizer, AutoModel
 import torch
 import os
-from dotenv import load_dotenv
+from settings import settings
 
-load_dotenv()
-HF_TOKEN = os.getenv("HF_TOKEN")
+HF_TOKEN = settings.HF_TOKEN
 
 MODEL_NAME_DARKBERT = "s2w-ai/DarkBERT"
 print(f"Loading embedding model: {MODEL_NAME_DARKBERT}")

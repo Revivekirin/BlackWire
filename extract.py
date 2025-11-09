@@ -1,5 +1,4 @@
 import os
-from dotenv import load_dotenv
 from pathlib import Path
 import pandas as pd
 import ast
@@ -9,53 +8,56 @@ from extract.extract_url import process_html_files_and_extract_urls
 from extract.extract_shodan import enrich_ips_with_shodan_data
 from extract.extract_cvedb import update_cvedb_from_shodan, match_cves_to_mitre
 from extract.extract_geolocation import add_coordinates_to_shodan_data
+from settings import settings
 
-load_dotenv()
-BASE_NEWS_DIR = os.getenv("BASE_NEWS_DIR") 
-OUTPUT_DIR = os.getenv("OUTPUT_DIR")
-ONION_JSON_PATH = os.getenv("ONION_JSON_PATH") 
-SHODAN_API_KEY = os.getenv("SHODAN_API_KEY")
-MITRE_XLSX_PATH = os.getenv("MITRE_XLSX_PATH")
-CVEDB_PATH = os.getenv("CVEDB_PATH") 
+BASE_DOWNLOAD_DIR = settings.BASE_DOWNLOAD_DIR
+TOR_PROXY_ADDRESS = settings.TOR_PROXY_ADDRESS
+ONION_JSON_PATH = settings.ONION_LIST_PATH
+SHODAN_API_KEY = settings.SHODAN_API_KEY
+MITRE_XLSX_PATH = settings.MITRE_XLSX_PATH
+CVEDB_PATH = settings.CVEDB_PATH
+BASE_NEWS_DIR = settings.BASE_NEWS_DIR
+OUTPUT_DIR = settings.OUTPUT_DIR
+
 
 def run():
     if not BASE_NEWS_DIR:
-        print("오류: BASE_NEWS_DIR 환경 변수가 설정되지 않았습니다. .env 파일을 확인해주세요.")
+        print("ERROR: Please set os.getenv('BASE_NEWS_DIR')")
         return
     if not OUTPUT_DIR:
-        print("오류: OUTPUT_DIR 환경 변수가 설정되지 않았습니다. .env 파일을 확인해주세요.")
+        print("ERROR: Please set os.getenv('OUTPUT_DIR')")
         return
     if not SHODAN_API_KEY:
-        print("오류: SHODAN_API_KEY 환경 변수가 .env 파일에 설정되지 않았습니다.")
+        print("ERROR: Please set os.getenv('SHODAN_API_KEY')")
         return
-        
-    output_dir_path = Path(OUTPUT_DIR) 
-    try: 
+
+    output_dir_path = Path(OUTPUT_DIR)
+    try:
         output_dir_path.mkdir(parents=True, exist_ok=True)
     except OSError as e:
-        print(f"오류: 출력 디렉토리 '{output_dir_path}' 생성 중 문제 발생: {e}")
+        print(f"ERROR: Failed to create '{output_dir_path}': {e}")
         return
 
-    print("\n--- 1. URL 추출 및 개별 CSV 생성 단계 ---")
+    print("\n--- Step 1: Extract URLs ---")
     process_html_files_and_extract_urls(BASE_NEWS_DIR, OUTPUT_DIR)
 
-    print("\n--- 2. csv 파일 병합 ---")
+    print("\n--- Step 2: Merge CSV Files ---")
     merge_and_update_shodan_csv(OUTPUT_DIR)
 
-    print("\n--- 3. Shodan 정보 보강 단계 ---")
-    shodan_data_csv_file = output_dir_path / "shodan_data.csv" 
-    
+    print("\n--- Step 3: Enrich with Shodan Data ---")
+    shodan_data_csv_file = output_dir_path / "shodan_data.csv"
+
     if shodan_data_csv_file.exists():
         enrich_success = enrich_ips_with_shodan_data(str(shodan_data_csv_file), SHODAN_API_KEY)
         if enrich_success:
-            print("Shodan 정보 보강 작업이 완료되었습니다.")
+            print("Shodan enrichment completed successfully.")
         else:
-            print("Shodan 정보 보강 작업 중 문제가 발생했거나 변경 사항이 없었습니다.")
+            print("Shodan enrichment encountered issues or no updates were needed.")
     else:
-        print(f"오류: Shodan 정보 보강 대상 파일 '{shodan_data_csv_file}'을 찾을 수 없습니다.")
-        print("CSV 병합 단계가 정상적으로 완료되었는지 확인해주세요.")
+        print(f"ERROR: Could not find '{shodan_data_csv_file}' for Shodan enrichment.")
+        print("Please ensure the CSV merge step completed successfully.")
 
-    print("\n--- 4. vulns + shodan_vulns 병합 리스트 생성 단계 ---")
+    print("\n--- Step 4: Generate Combined CVE List ---")
     if shodan_data_csv_file.exists():
         try:
             df = pd.read_csv(shodan_data_csv_file)
@@ -64,12 +66,10 @@ def run():
                 vulns_str = row.get('vulns', '')
                 shodan_vulns_str = row.get('shodan_vulns', '')
 
-                # 1. vulns: 쉼표로 분리된 문자열 처리
                 vulns = []
                 if pd.notna(vulns_str) and isinstance(vulns_str, str):
                     vulns = [v.strip() for v in vulns_str.split(',') if v.strip().startswith("CVE-")]
 
-                # 2. shodan_vulns: 리스트 형태의 문자열 처리
                 shodan_vulns = []
                 if pd.notna(shodan_vulns_str) and isinstance(shodan_vulns_str, str):
                     try:
@@ -77,36 +77,34 @@ def run():
                         if isinstance(parsed, list):
                             shodan_vulns = [v.strip() for v in parsed if isinstance(v, str) and v.startswith("CVE-")]
                     except Exception as e:
-                        print(f"[경고] shodan_vulns 파싱 오류: {e} -> {shodan_vulns_str}")
+                        print(f"[Warning] Failed to parse shodan_vulns: {e} -> {shodan_vulns_str}")
 
                 return list(set(vulns + shodan_vulns))
 
             df['cve_list'] = df.apply(combine_vulns, axis=1)
             df.to_csv(shodan_data_csv_file, index=False)
-            print(f"'cve_list' 열을 추가한 파일이 저장되었습니다: {shodan_data_csv_file}")
+            print(f"File with 'cve_list' column saved: {shodan_data_csv_file}")
         except Exception as e:
-            print(f"[오류]: cve_list 생성 중 예외 발생: {e}")
+            print(f"[Error] Exception occurred while generating cve_list: {e}")
     else:
-        print(f"[오류]: '{shodan_data_csv_file}' 파일이 존재하지 않아 cve_list를 생성할 수 없습니다.")
+        print(f"[Error] '{shodan_data_csv_file}' does not exist; cannot generate cve_list.")
 
-    print("\n모든 작업 완료.")
-
-    print("\n--- 5. CVE DB 정보 보강 단계 ---")
+    print("\n--- Step 5: Update CVE Database with Shodan Info ---")
     update_cvedb_from_shodan(str(shodan_data_csv_file), CVEDB_PATH)
 
-    print("\n--- 6. CVE Summary 기반 MITRE TTP 매핑 ---")
+    print("\n--- Step 6: Map CVEs to MITRE TTPs ---")
     match_cves_to_mitre(CVEDB_PATH, MITRE_XLSX_PATH)
 
-    print("\n--- 7. Shodan 데이터에 위도/경도 좌표 추가 ---")
+    print("\n--- Step 7: Add Geolocation Coordinates ---")
     if shodan_data_csv_file.exists():
         try:
             add_coordinates_to_shodan_data(str(shodan_data_csv_file), save=True, sleep_sec=1)
         except Exception as e:
-            print(f"[오류] 좌표 추가 중 예외 발생: {e}")
+            print(f"[Error] Exception occurred while adding coordinates: {e}")
     else:
-        print(f"[오류] '{shodan_data_csv_file}' 파일이 존재하지 않아 좌표를 추가할 수 없습니다.")
+        print(f"[Error] '{shodan_data_csv_file}' does not exist; cannot add coordinates.")
 
-
+    print("\nAll tasks completed successfully.")
 
 if __name__ == "__main__":
     run()

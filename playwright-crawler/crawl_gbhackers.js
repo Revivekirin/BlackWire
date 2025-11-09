@@ -16,11 +16,6 @@ const urlsToCheck = [
 ];
 
 const getTodayISODate = () => new Date().toISOString().split('T')[0];
-// const getTodayISODate = () => {
-//   const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000);
-//   return yesterday.toISOString().split('T')[0];
-// };
-
 
 const downloadImage = (url, filepath) => {
   return new Promise((resolve, reject) => {
@@ -42,7 +37,7 @@ const downloadImage = (url, filepath) => {
   let totalCollected = 0;
 
   for (const url of urlsToCheck) {
-    console.log(`🌐 방문 중: ${url}`);
+    console.log(`Visiting: ${url}`);
     const categoryName = url.split('/').filter(Boolean).pop() || 'main';
     try {
       await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 60000 });
@@ -58,19 +53,18 @@ const downloadImage = (url, filepath) => {
         );
       }
 
-      for (const [i, article] of articleLinks.entries()) {  
+      for (const [i, article] of articleLinks.entries()) {
         if (seenUrls.has(article.url)) continue;
 
         const articlePage = await browser.newPage();
         try {
           await articlePage.goto(article.url, { waitUntil: 'domcontentloaded', timeout: 60000 });
 
-          // const articleDate = await articlePage.$eval('time.entry-date', el => el.getAttribute('datetime').split('T')[0]);
           const articleDateText = await articlePage.$eval('time.entry-date', el => el.textContent.trim());
           const articleDate = new Date(articleDateText).toISOString().split('T')[0];
 
           if (url !== 'https://gbhackers.com/' && articleDate !== todayDate) {
-            console.log(`⏭️ 오늘 날짜 아님 (${articleDate}) - ${article.url}`);
+            console.log(`Skip (not today: ${articleDate}) - ${article.url}`);
             await articlePage.close();
             continue;
           }
@@ -82,21 +76,25 @@ const downloadImage = (url, filepath) => {
             'downloads',
             'gbhackers',
             todayDate,
-            `${categoryName}_${i + 1}_${safeTitle}` 
+            `${categoryName}_${i + 1}_${safeTitle}`
           );
           fs.mkdirSync(articleDir, { recursive: true });
 
-          console.log(`📄 ${article.title}`);
-          console.log(`🔗 ${article.url}`);
+          console.log(article.title);
+          console.log(article.url);
 
           let content = '';
           try {
             content = await articlePage.$eval('div.td-post-content', el => el.innerText.trim());
           } catch {
-            content = '(본문을 찾을 수 없음)';
+            content = '(No body content found)';
           }
 
-          fs.writeFileSync(path.join(articleDir, 'article.txt'), `제목: ${article.title}\nURL: ${article.url}\n\n${content}`, 'utf-8');
+          fs.writeFileSync(
+            path.join(articleDir, 'article.txt'),
+            `Title: ${article.title}\nURL: ${article.url}\n\n${content}`,
+            'utf-8'
+          );
 
           const images = await articlePage.$$eval('div.td-post-content img', imgs =>
             imgs.map(img => img.getAttribute('data-src') || img.src).filter(src => src?.startsWith('http'))
@@ -107,23 +105,23 @@ const downloadImage = (url, filepath) => {
             const imgPath = path.join(articleDir, `image_${idx + 1}${ext}`);
             try {
               await downloadImage(imgUrl, imgPath);
-              console.log(`   🖼️ 저장됨: ${imgPath}`);
+              console.log(`Saved image: ${imgPath}`);
             } catch {
-              console.warn(`   ❌ 이미지 실패: ${imgUrl}`);
+              console.warn(`Image download failed: ${imgUrl}`);
             }
           }
         } catch (err) {
-          console.error(`❌ 기사 처리 중 오류 발생: ${err.message}`);
+          console.error(`Error while processing article: ${err.message}`);
         } finally {
           await articlePage.close();
           console.log('-'.repeat(80));
         }
       }
     } catch (err) {
-      console.error(`❌ ${url} 방문 중 오류 발생: ${err.message}`);
+      console.error(`Error visiting ${url}: ${err.message}`);
     }
   }
 
-  console.log(`\n✅ 오늘(${todayDate}) 수집된 기사 수: ${totalCollected}`);
+  console.log(`Collected articles for ${todayDate}: ${totalCollected}`);
   await browser.close();
 })();

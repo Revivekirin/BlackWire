@@ -10,11 +10,11 @@ const getTodayUSDate = () =>
     month: 'short',
     day: '2-digit',
     year: 'numeric'
-  }); 
+  });
 
 const downloadImage = (url, filepath) => new Promise((resolve, reject) => {
   https.get(url, (res) => {
-    if (res.statusCode !== 200) return reject(new Error(`이미지 다운로드 실패: ${url}`));
+    if (res.statusCode !== 200) return reject(new Error(`Image download failed: ${url}`));
     const stream = fs.createWriteStream(filepath);
     res.pipe(stream);
     stream.on('finish', () => stream.close(resolve));
@@ -34,8 +34,6 @@ const downloadImage = (url, filepath) => new Promise((resolve, reject) => {
     const titleEl = $(li).find('h4 a');
     const url = titleEl.attr('href');
     const title = titleEl.text().trim();
-
-    // 외부 링크(external sponsor 등) 제외: bleepingcomputer.com 도메인만 허용
     if (!url || !url.startsWith('https://www.bleepingcomputer.com/news/security/')) return;
 
     const imageUrl = $(li).find('.bc_latest_news_img img').attr('src') || '';
@@ -51,7 +49,6 @@ const downloadImage = (url, filepath) => new Promise((resolve, reject) => {
     );
     fs.mkdirSync(articleDir, { recursive: true });
 
-    // 본문 가져오기: <div class="articleBody"> 내 모든 <p> 텍스트
     let articleContent = '';
     try {
       const articleRes = await axios.get(url);
@@ -62,24 +59,23 @@ const downloadImage = (url, filepath) => new Promise((resolve, reject) => {
         .filter(p => p.length > 0)
         .join('\n\n');
     } catch (err) {
-      articleContent = '(본문 수집 실패)';
+      articleContent = '(Failed to fetch article body)';
     }
 
-    const textContent = `제목: ${title}\nURL: ${url}\n날짜: ${todayDate}\n\n요약: ${summary}\n\n본문:\n${articleContent}`;
+    const textContent = `Title: ${title}\nURL: ${url}\nDate: ${todayDate}\n\nSummary: ${summary}\n\nContent:\n${articleContent}`;
     fs.writeFileSync(path.join(articleDir, 'article.txt'), textContent, 'utf-8');
 
-    // 이미지 저장
     if (imageUrl.startsWith('http')) {
       const ext = path.extname(new URL(imageUrl).pathname) || '.jpg';
       const imgPath = path.join(articleDir, `image_1${ext}`);
       try {
         await downloadImage(imageUrl, imgPath);
-        console.log(`🖼️  이미지 저장됨: ${imgPath}`);
+        console.log(`Image saved: ${imgPath}`);
       } catch (e) {
-        console.warn(`⚠️  이미지 다운로드 실패: ${imageUrl}`);
+        console.warn(`Image download failed: ${imageUrl}`);
       }
     }
 
-    console.log(`수집 완료: ${title}`);
+    console.log(`Article collected: ${title}`);
   });
 })();

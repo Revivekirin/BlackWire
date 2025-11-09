@@ -4,13 +4,12 @@ const path = require('path');
 const https = require('https');
 
 const todayStr = new Date().toISOString().split('T')[0];
-
 const BASE_URL = 'https://www.securityweek.com/';
 
 const downloadImage = (url, filepath) => {
   return new Promise((resolve, reject) => {
     https.get(url, res => {
-      if (res.statusCode !== 200) return reject(new Error(`이미지 다운로드 실패: ${res.statusCode}`));
+      if (res.statusCode !== 200) return reject(new Error(`Image download failed: ${res.statusCode}`));
       const stream = fs.createWriteStream(filepath);
       res.pipe(stream);
       stream.on('finish', () => stream.close(resolve));
@@ -26,29 +25,30 @@ const downloadImage = (url, filepath) => {
   const page = await context.newPage();
 
   try {
-    console.log(`🌐 SecurityWeek 접속: ${BASE_URL}`);
+    console.log(`Visiting SecurityWeek: ${BASE_URL}`);
     await page.goto(BASE_URL, { waitUntil: 'domcontentloaded', timeout: 60000 });
 
-    // 오늘 날짜 기사만 필터링
     const articles = await page.$$eval('article.zox-art-wrap', (nodes, todayStr) => {
-      return nodes.map(node => {
-        const titleEl = node.querySelector('h2.zox-s-title2');
-        const linkEl = node.querySelector('a[rel="bookmark"]');
-        const dateMeta = node.querySelector('meta[itemprop="dateModified"]');
-        const summary = node.querySelector('p.zox-s-graph')?.innerText.trim() || '';
-        const imgEl = node.querySelector('div.img-ratio img');
+      return nodes
+        .map(node => {
+          const titleEl = node.querySelector('h2.zox-s-title2');
+          const linkEl = node.querySelector('a[rel="bookmark"]');
+          const dateMeta = node.querySelector('meta[itemprop="dateModified"]');
+          const summary = node.querySelector('p.zox-s-graph')?.innerText.trim() || '';
+          const imgEl = node.querySelector('div.img-ratio img');
 
-        const title = titleEl?.innerText.trim();
-        const url = linkEl?.href;
-        const date = dateMeta?.getAttribute('content') || '';
-        const img = imgEl?.src;
+          const title = titleEl?.innerText.trim();
+          const url = linkEl?.href;
+          const date = dateMeta?.getAttribute('content') || '';
+          const img = imgEl?.src;
 
-        if (!title || !url || !date) return null;
-        return { title, url, date, summary, img };
-      }).filter(a => a && a.date === todayStr);
+          if (!title || !url || !date) return null;
+          return { title, url, date, summary, img };
+        })
+        .filter(a => a && a.date === todayStr);
     }, todayStr);
 
-    console.log(`📰 오늘 날짜 기사 수: ${articles.length}`);
+    console.log(`Articles dated today: ${articles.length}`);
     let count = 0;
 
     for (const article of articles) {
@@ -57,23 +57,28 @@ const downloadImage = (url, filepath) => {
       const articleDir = path.join(__dirname, 'downloads', 'securityweek', todayStr, `${count}_${safeTitle}`);
       fs.mkdirSync(articleDir, { recursive: true });
 
-      console.log(`📄 수집 중: ${article.title}`);
-      console.log(`🔗 ${article.url}`);
+      console.log(`Collecting: ${article.title}`);
+      console.log(`URL: ${article.url}`);
 
       const articlePage = await context.newPage();
       await articlePage.goto(article.url, { waitUntil: 'domcontentloaded', timeout: 60000 });
 
-        let paragraphs = [];
-        try {
+      let paragraphs = [];
+      try {
         paragraphs = await articlePage.$$eval('div.zox-post-body p', nodes =>
-            nodes.map(p => p.textContent.trim()).filter(p => p.length > 0)
+          nodes.map(p => p.textContent.trim()).filter(p => p.length > 0)
         );
-        } catch {
-        console.warn('⚠️ 본문 <p> 수집 실패');
-        }
+      } catch {
+        console.warn('Failed to collect <p> elements from body.');
+      }
 
+      const fullText =
+        `Title: ${article.title}\n` +
+        `URL: ${article.url}\n` +
+        `Date: ${article.date}\n\n` +
+        `Summary: ${article.summary}\n\n` +
+        `Content:\n${paragraphs.join('\n\n') || '(No body content)'}`;
 
-      const fullText = `제목: ${article.title}\nURL: ${article.url}\n날짜: ${article.date}\n\n요약: ${article.summary}\n\n본문:\n${paragraphs.join('\n\n') || '(본문 없음)'}`;
       fs.writeFileSync(path.join(articleDir, 'article.txt'), fullText, 'utf-8');
 
       if (article.img?.startsWith('http')) {
@@ -81,17 +86,17 @@ const downloadImage = (url, filepath) => {
         const imgPath = path.join(articleDir, `thumb${ext}`);
         try {
           await downloadImage(article.img, imgPath);
-          console.log(`🖼️  썸네일 저장 완료: ${imgPath}`);
+          console.log(`Thumbnail saved: ${imgPath}`);
         } catch {
-          console.warn(`❌ 이미지 다운로드 실패: ${article.img}`);
+          console.warn(`Image download failed: ${article.img}`);
         }
       }
 
       await articlePage.close();
-      console.log('✅ 저장 완료\n' + '-'.repeat(80));
+      console.log('Saved\n' + '-'.repeat(80));
     }
   } catch (err) {
-    console.error(`❌ 오류 발생: ${err.message}`);
+    console.error(`Error: ${err.message}`);
   } finally {
     await browser.close();
   }
