@@ -1,5 +1,3 @@
-
-````markdown
 # 🕷️ Playwright Crawler Dashboard
 
 <div align="center">
