@@ -173,4 +173,4 @@ cython_debug/
 # PyPI configuration file
 .pypirc
 
-./extract/extract_test.py
+./extract/test.py

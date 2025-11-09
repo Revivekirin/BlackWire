@@ -42,7 +42,7 @@ from settings import settings
 project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 shodan_data_path = os.path.join(project_root, "data", "shodan", "shodan_data.csv")
 cve_db_path = os.path.join(project_root, "data", "shodan", "cvedb_shodan.csv")
-attack_matrix_path = os.path.join(project_root, "data", "enterprise-attack-v17.1.xlsx")
+attack_matrix_path = os.path.join(project_root, "data", "mitre", "enterprise-attack-v17.1.xlsx")
 news_data_path = os.path.join(project_root, "data", "news_data.json")
 
 GEMINI_API_KEY = settings.GEMINI_API_KEY
